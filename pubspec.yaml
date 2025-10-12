@@ -30,6 +30,12 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+    
+  sqflite: ^2.3.3+1
+  path: ^1.9.0
+  path_provider: ^2.1.4
+  intl: ^0.19.0      # (เผื่อฟอร์แมตวันที่ในประวัติ/กราฟ)
+  # fl_chart: ^0.69.0 # จะใช้ตอนทำกราฟจริงภายหลัง
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
