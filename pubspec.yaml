@@ -37,6 +37,7 @@ dependencies:
   intl: ^0.19.0      # (เผื่อฟอร์แมตวันที่ในประวัติ/กราฟ)
   image_picker: ^1.1.2
   image: ^3.3.0
+
   # fl_chart: ^0.69.0 # จะใช้ตอนทำกราฟจริงภายหลัง
 
   # The following adds the Cupertino Icons font to your application.
@@ -64,7 +65,10 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
-
+  assets:
+    - assets/masks/fish_template.png
+    - assets/masks/pencil_template.png
+    - assets/masks/icecream_template.png
   # To add assets to your application, add an assets section, like this:
   # assets:
   #   - images/a_dot_burr.jpeg

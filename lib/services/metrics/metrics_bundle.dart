@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'entropy_service.dart';
 import 'complexity_service.dart';
 import 'coverage_blank_service.dart';
@@ -5,7 +7,12 @@ import 'cotl_outside_service.dart';
 
 class MetricsResult {
   final double h, dstar, cotl, blank;
-  MetricsResult({required this.h, required this.dstar, required this.cotl, required this.blank});
+  MetricsResult({
+    required this.h,
+    required this.dstar,
+    required this.cotl,
+    required this.blank,
+  });
 }
 
 class MetricsBundle {
@@ -14,10 +21,9 @@ class MetricsBundle {
   final _blank = CoverageBlankService();
   final _cotl = CotlOutsideService();
 
-  /// ตอนใช้งานจริง ส่ง bytes ของรูป และ mask ตาม template
   Future<MetricsResult> computeAll({
-    required List<int> imageBytes,
-    required List<int> maskBytes,
+    required Uint8List imageBytes,
+    required Uint8List maskBytes,
   }) async {
     final h = _entropy.computeNormalizedEntropyFromBytes(imageBytes);
     final d = _complex.computeDStarFromBytes(imageBytes);
