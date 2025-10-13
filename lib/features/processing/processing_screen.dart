@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import '../../routes.dart';
 import '../../widgets/loading_indicator.dart';
 import '../../services/metrics/metrics_bundle.dart';
+import '../../data/models/session.dart';
+import '../../data/repositories/session_repo.dart';
 
 class ProcessingScreen extends StatefulWidget {
   const ProcessingScreen({super.key});
@@ -38,13 +40,25 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
     }
 
     try {
-      // คำนวณจริง (Blank/COTL จะเป็น 0 ถ้ายังไม่มี mask)
+      // ✅ คำนวณจริง (Blank/COTL จะเป็น 0 ถ้ายังไม่มี mask)
       final bundle = MetricsBundle();
       final res = await bundle.computeAll(
         imageBytes: imageBytes,
         maskBytes : maskBytes ?? Uint8List(0),
       );
 
+      // ✅ บันทึกผลลงฐานข้อมูล SQLite
+      final now = DateTime.now();
+      await SessionRepo().insert(Session(
+        createdAt: now,
+        templateKey: templateKey,
+        h: res.h,
+        dstar: res.dstar,
+        cotl: res.cotl,
+        blank: res.blank,
+      ));
+
+      // ✅ ไปหน้าสรุปผล
       if (!mounted) return;
       Navigator.pushReplacementNamed(
         context,
@@ -56,6 +70,7 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
           'blank': double.parse(res.blank.toStringAsFixed(4)),
           'z'    : {'h': null, 'd': null, 'cotl': null, 'blank': null},
           'templateKey': templateKey,
+          'createdAt': now.toIso8601String(),
         },
       );
     } catch (e) {

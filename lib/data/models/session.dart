@@ -1,11 +1,11 @@
 class Session {
   final int? id;
   final DateTime createdAt;
-  final String templateKey; // fish / pencil / ice_cream ...
-  final double h;           // entropy (0..1)
-  final double dstar;       // complexity D* (0..1)
-  final double cotl;        // นอกเส้น (0..1)
-  final double blank;       // ในเส้นที่ว่าง (0..1)
+  final String templateKey;
+  final double h;
+  final double dstar;
+  final double cotl;
+  final double blank;
 
   Session({
     this.id,
@@ -17,7 +17,7 @@ class Session {
     required this.blank,
   });
 
-  Map<String, Object?> toMap() => {
+  Map<String, dynamic> toMap() => {
         'id': id,
         'created_at': createdAt.toIso8601String(),
         'template_key': templateKey,
@@ -27,7 +27,7 @@ class Session {
         'blank': blank,
       };
 
-  static Session fromMap(Map<String, Object?> m) => Session(
+  factory Session.fromMap(Map<String, dynamic> m) => Session(
         id: m['id'] as int?,
         createdAt: DateTime.parse(m['created_at'] as String),
         templateKey: m['template_key'] as String,
