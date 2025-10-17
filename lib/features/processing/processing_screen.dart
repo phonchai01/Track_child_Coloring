@@ -1,11 +1,9 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
-import '../../routes.dart';
 import '../../widgets/loading_indicator.dart';
-import '../../services/metrics/metrics_bundle.dart';
-import '../../data/models/session.dart';
-import '../../data/repositories/session_repo.dart';
+import '../../services/metrics/zscore_service.dart';
+import '../result/result_summary_screen.dart';
 
 class ProcessingScreen extends StatefulWidget {
   const ProcessingScreen({super.key});
@@ -16,6 +14,7 @@ class ProcessingScreen extends StatefulWidget {
 
 class _ProcessingScreenState extends State<ProcessingScreen> {
   bool _started = false;
+  String? _error;
 
   @override
   void didChangeDependencies() {
@@ -25,67 +24,127 @@ class _ProcessingScreenState extends State<ProcessingScreen> {
     _run();
   }
 
+  double _readAsDouble(dynamic v) {
+    if (v == null) return 0.0;
+    if (v is num) return v.toDouble();
+    return double.tryParse(v.toString()) ?? 0.0;
+  }
+
+  /// ดึงค่า H/C/Blank/COTL จาก object metrics ที่อาจใช้ชื่อฟิลด์ต่างกัน
+  Map<String, double> _extractMetricsDynamic(dynamic m) {
+    // รองรับชื่อยอดฮิตที่เจอกันบ่อย ๆ
+    final h = _readAsDouble(
+      (m?.h) ??
+          (m?.H) ??
+          (m?.entropy) ??
+          (m?.entropyValue) ??
+          (m?['h']) ??
+          (m?['H']) ??
+          (m?['entropy']),
+    );
+
+    final c = _readAsDouble(
+      (m?.c) ??
+          (m?.C) ??
+          (m?.complexity) ??
+          (m?.dstar) ??
+          (m?.Dstar) ??
+          (m?.dStar) ??
+          (m?['c']) ??
+          (m?['complexity']) ??
+          (m?['dstar']),
+    );
+
+    final blank = _readAsDouble(
+      (m?.blank) ??
+          (m?.blankCoverage) ??
+          (m?.coverageBlank) ??
+          (m?['blank']) ??
+          (m?['blankCoverage']) ??
+          (m?['coverageBlank']),
+    );
+
+    final cotl = _readAsDouble(
+      (m?.cotl) ??
+          (m?.cotlOutside) ??
+          (m?.outside) ??
+          (m?['cotl']) ??
+          (m?['cotlOutside']) ??
+          (m?['outside']),
+    );
+
+    return {'h': h, 'c': c, 'blank': blank, 'cotl': cotl};
+  }
+
   Future<void> _run() async {
-    // อ่าน arguments อย่างปลอดภัยหลังจาก context พร้อมแล้ว
-    final args = (ModalRoute.of(context)?.settings.arguments as Map?) ?? const {};
-    final Uint8List? imageBytes = args['imageBytes'] as Uint8List?;
-    final Uint8List? maskBytes  = args['maskBytes'] as Uint8List?;
-    final String templateKey    = (args['templateKey'] as String?) ?? 'template';
-
-    if (imageBytes == null) {
-      // ไม่มีภาพ → กลับหน้าก่อน
-      if (!mounted) return;
-      Navigator.pop(context);
-      return;
-    }
-
     try {
-      // ✅ คำนวณจริง (Blank/COTL จะเป็น 0 ถ้ายังไม่มี mask)
-      final bundle = MetricsBundle();
-      final res = await bundle.computeAll(
-        imageBytes: imageBytes,
-        maskBytes : maskBytes ?? Uint8List(0),
+      final args = (ModalRoute.of(context)?.settings.arguments as Map?) ?? const {};
+
+      final String templateKey =
+          (args['templateKey'] ?? args['template'])?.toString() ?? '';
+      final dynamic ageRaw = args['age'];
+      final int age = (ageRaw is int) ? ageRaw : int.tryParse('${ageRaw ?? ''}') ?? 4;
+
+      // ถ้าหน้าก่อนส่ง metrics มาด้วย จะใช้เลย
+      final dynamic metricsObj = args['metrics'];
+
+      if (metricsObj == null) {
+        // ยังไม่มี metrics: ที่โปรเจกต์ปัจจุบัน การคำนวณ metrics เกิดก่อนหน้านี้แล้ว
+        // ถ้าต้องให้หน้าปัจจุบันคำนวณเอง ให้เพิ่มโค้ดคำนวณจริงของโปรเจกต์คุณมาที่นี่
+        throw Exception('ไม่พบ metrics ใน arguments (คาดว่าให้คำนวณมาก่อนหน้าแล้ว).');
+      }
+
+      final mm = _extractMetricsDynamic(metricsObj);
+
+      // คำนวณ Z-Score จาก baseline
+      final z = await ZScoreService.instance.compute(
+        templateKey: templateKey,
+        age: age,
+        h: mm['h'] ?? 0.0,
+        c: mm['c'] ?? 0.0,
+        blank: mm['blank'] ?? 0.0,
+        cotl: mm['cotl'] ?? 0.0,
       );
 
-      // ✅ บันทึกผลลงฐานข้อมูล SQLite
-      final now = DateTime.now();
-      await SessionRepo().insert(Session(
-        createdAt: now,
-        templateKey: templateKey,
-        h: res.h,
-        dstar: res.dstar,
-        cotl: res.cotl,
-        blank: res.blank,
-      ));
-
-      // ✅ ไปหน้าสรุปผล
       if (!mounted) return;
-      Navigator.pushReplacementNamed(
-        context,
-        AppRoutes.result,
-        arguments: {
-          'h'    : double.parse(res.h.toStringAsFixed(4)),
-          'dstar': double.parse(res.dstar.toStringAsFixed(4)),
-          'cotl' : double.parse(res.cotl.toStringAsFixed(4)),
-          'blank': double.parse(res.blank.toStringAsFixed(4)),
-          'z'    : {'h': null, 'd': null, 'cotl': null, 'blank': null},
-          'templateKey': templateKey,
-          'createdAt': now.toIso8601String(),
-        },
+
+      // นำทางไป ResultSummary โดยไม่พึ่งชื่อ route คงที่
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => const ResultSummaryScreen(),
+          settings: RouteSettings(arguments: {
+            ...args,
+            'templateKey': templateKey,
+            'age': age,
+            'zscore': z,
+            // ส่ง metricsObj เดิมให้จอถัดไปใช้
+            'metrics': metricsObj,
+          }),
+        ),
       );
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('เกิดข้อผิดพลาดในการประมวลผล: $e')),
-      );
-      Navigator.pop(context);
+      setState(() => _error = e.toString());
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_error != null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Processing')),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text(
+              'เกิดข้อผิดพลาดระหว่างประมวลผล:\n$_error',
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+      );
+    }
     return const Scaffold(
-      body: Center(child: LoadingIndicator()),
+      body: Center(child: LoadingIndicator(message: 'กำลังประมวลผล...')),
     );
   }
 }
