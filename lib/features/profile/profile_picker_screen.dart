@@ -40,43 +40,68 @@ class _ProfilePickerScreenState extends State<ProfilePickerScreen> {
   }
 
   void _openAddDialog() {
+    int ageTemp = 4; // ค่าเริ่มใน dialog (แยกจาก state หลัก)
+
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('สร้างโปรไฟล์ใหม่'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: _nameCtrl,
-              decoration: const InputDecoration(labelText: 'ชื่อเด็ก'),
+      builder: (_) => StatefulBuilder(
+        builder: (_, setStateDialog) => AlertDialog(
+          title: const Text('สร้างโปรไฟล์ใหม่'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: _nameCtrl,
+                decoration: const InputDecoration(labelText: 'ชื่อเด็ก'),
+                keyboardType: TextInputType.name,
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  const Text('อายุ: '),
+                  const SizedBox(width: 8),
+                  DropdownButton<int>(
+                    value: ageTemp,
+                    items: const [
+                      DropdownMenuItem(value: 4, child: Text('4 ขวบ')),
+                      DropdownMenuItem(value: 5, child: Text('5 ขวบ')),
+                    ],
+                    onChanged: (v) => setStateDialog(() {
+                      ageTemp = v ?? 4; // ✅ เปลี่ยนแล้วเห็นทันทีใน dialog
+                    }),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('ยกเลิก'),
             ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                const Text('อายุ: '),
-                const SizedBox(width: 8),
-                DropdownButton<int>(
-                  value: _age,
-                  items: const [
-                    DropdownMenuItem(value: 4, child: Text('4 ขวบ')),
-                    DropdownMenuItem(value: 5, child: Text('5 ขวบ')),
-                  ],
-                  onChanged: (v) => setState(() => _age = v ?? 4),
-                ),
-              ],
+            FilledButton(
+              onPressed: () async {
+                final name = _nameCtrl.text.trim();
+                if (name.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('กรอกชื่อก่อน')),
+                  );
+                  return;
+                }
+                await ChildRepo.instance.add(ChildProfile(name: name, age: ageTemp));
+                _nameCtrl.clear();
+                if (!mounted) return;
+                Navigator.pop(context); // ปิด dialog
+                _reload();              // รีเฟรชรายการ
+              },
+              child: const Text('บันทึก'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('ยกเลิก')),
-          FilledButton(onPressed: _addProfile, child: const Text('บันทึก')),
-        ],
       ),
     );
   }
+
 
   @override
   Widget build(BuildContext context) {
