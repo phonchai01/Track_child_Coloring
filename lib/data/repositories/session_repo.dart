@@ -1,63 +1,84 @@
-import 'dart:async';
-import 'package:path/path.dart' as p;
-import 'package:sqflite/sqflite.dart';
-import '../models/session.dart';
+import 'dart:convert';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
 
+/// รูปแบบข้อมูลที่ยืดหยุ่น:
+/// - templateKey: String
+/// - age: int
+/// - metrics: { h, c, blank, cotl }
+/// - zscore:  { h, c, blank, cotl }
+/// - timestamp: ISO8601
+/// - extra: Map (อะไรก็ได้)
 class SessionRepo {
-  static final SessionRepo _i = SessionRepo._internal();
-  factory SessionRepo() => _i;
-  SessionRepo._internal();
+  SessionRepo._();
+  static final SessionRepo instance = SessionRepo._();
 
-  Database? _db;
+  static const String _fileName = 'sessions.jsonl';
 
-  Future<Database> _open() async {
-    if (_db != null) return _db!;
-    final dbPath = await getDatabasesPath();
-    final path = p.join(dbPath, 'track_child_dev.db');
-    _db = await openDatabase(
-      path,
-      version: 1,
-      onCreate: (db, _) async {
-        await db.execute('''
-          CREATE TABLE sessions(
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            created_at TEXT NOT NULL,
-            template_key TEXT NOT NULL,
-            h REAL NOT NULL,
-            dstar REAL NOT NULL,
-            cotl REAL NOT NULL,
-            blank REAL NOT NULL
-          )
-        ''');
-        await db.execute('CREATE INDEX idx_sessions_template ON sessions(template_key)');
-        await db.execute('CREATE INDEX idx_sessions_created ON sessions(created_at)');
-      },
-    );
-    return _db!;
+  Future<File> _getFile() async {
+    final dir = await getApplicationDocumentsDirectory();
+    final f = File('${dir.path}/$_fileName');
+    if (!await f.exists()) {
+      await f.create(recursive: true);
+    }
+    return f;
   }
 
-  Future<int> insert(Session s) async {
-    final db = await _open();
-    return db.insert('sessions', s.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+  /// บันทึก 1 session เป็น 1 บรรทัด (JSONL)
+  Future<void> save({
+    required String templateKey,
+    required int age,
+    required Map<String, double> metrics, // {h,c,blank,cotl}
+    required Map<String, double> zscore,  // {h,c,blank,cotl}
+    DateTime? timestamp,
+    Map<String, dynamic>? extra,
+  }) async {
+    final file = await _getFile();
+    final rec = <String, dynamic>{
+      'templateKey': templateKey,
+      'age': age,
+      'metrics': metrics,
+      'zscore': zscore,
+      'timestamp': (timestamp ?? DateTime.now()).toIso8601String(),
+      if (extra != null) ...{'extra': extra},
+    };
+    await file.writeAsString('${jsonEncode(rec)}\n', mode: FileMode.append, flush: true);
   }
 
-  Future<List<Session>> listAll({String? templateKey, int? limit}) async {
-    final db = await _open();
-    final where = <String>[];
-    final args = <Object?>[];
-    if (templateKey != null) { where.add('template_key = ?'); args.add(templateKey); }
-    final rows = await db.query(
-      'sessions',
-      where: where.isEmpty ? null : where.join(' AND '),
-      whereArgs: args.isEmpty ? null : args,
-      orderBy: 'datetime(created_at) ASC',
-      limit: limit,
-    );
-    return rows.map(Session.fromMap).toList();
+  /// อ่านทั้งหมด (ใหม่สุดอยู่ล่างไฟล์ → จะ reverse ให้ใหม่สุดมาก่อน)
+  Future<List<Map<String, dynamic>>> list({int? limit}) async {
+    final file = await _getFile();
+    final exists = await file.exists();
+    if (!exists) return [];
+
+    final lines = await file.readAsLines();
+    final out = <Map<String, dynamic>>[];
+    for (final line in lines) {
+      final l = line.trim();
+      if (l.isEmpty) continue;
+      try {
+        final m = jsonDecode(l) as Map<String, dynamic>;
+        out.add(m);
+      } catch (_) {
+        // ข้ามบรรทัดเสีย
+      }
+    }
+    out.sort((a, b) {
+      final at = DateTime.tryParse(a['timestamp'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final bt = DateTime.tryParse(b['timestamp'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+      return bt.compareTo(at); // ใหม่ → เก่า
+    });
+    if (limit != null && out.length > limit) {
+      return out.sublist(0, limit);
+    }
+    return out;
   }
 
+  /// เคลียร์ทั้งหมด (ใช้ตอนรีเซ็ต/ทดสอบ)
   Future<void> clearAll() async {
-    final db = await _open();
-    await db.delete('sessions');
+    final file = await _getFile();
+    if (await file.exists()) {
+      await file.writeAsString('', flush: true);
+    }
   }
 }

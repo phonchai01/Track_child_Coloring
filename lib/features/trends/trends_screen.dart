@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:fl_chart/fl_chart.dart';
 import '../../data/repositories/session_repo.dart';
-import '../../data/models/session.dart';
 
 class TrendsScreen extends StatefulWidget {
   const TrendsScreen({super.key});
@@ -11,52 +9,68 @@ class TrendsScreen extends StatefulWidget {
 }
 
 class _TrendsScreenState extends State<TrendsScreen> {
-  late Future<List<Session>> _future;
+  late Future<List<Map<String, dynamic>>> _future; // ← ใช้ Map ให้ตรงกับ SessionRepo
 
   @override
   void initState() {
     super.initState();
-    _future = SessionRepo().listAll(); // ทั้งหมดก่อน / ภายหลังเลือก template ได้
+    _future = SessionRepo.instance.list(); // โหลดทั้งหมด (ใหม่ → เก่า)
   }
+
+  String _fmtDouble(dynamic v) {
+    if (v == null) return '-';
+    if (v is num) return v.toStringAsFixed(3);
+    return v.toString();
+    }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('กราฟความคืบหน้า')),
-      body: FutureBuilder<List<Session>>(
+      appBar: AppBar(title: const Text('Trends')),
+      body: FutureBuilder<List<Map<String, dynamic>>>(
         future: _future,
-        builder: (_, snap) {
-          if (!snap.hasData) return const Center(child: CircularProgressIndicator());
-          final items = snap.data!;
-          if (items.length < 2) return const Center(child: Text('ต้องมีข้อมูลอย่างน้อย 2 ครั้งเพื่อแสดงกราฟ'));
-
-          items.sort((a,b)=> a.createdAt.compareTo(b.createdAt));
-          final spotsH = <FlSpot>[];
-          for (var i = 0; i < items.length; i++) {
-            spotsH.add(FlSpot(i.toDouble(), items[i].h));
+        builder: (context, snap) {
+          if (snap.connectionState != ConnectionState.done) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snap.hasError) {
+            return Center(child: Text('เกิดข้อผิดพลาด: ${snap.error}'));
+          }
+          final items = snap.data ?? [];
+          if (items.isEmpty) {
+            return const Center(child: Text('ยังไม่มีข้อมูล'));
           }
 
-          return Padding(
-            padding: const EdgeInsets.all(16),
-            child: LineChart(
-              LineChartData(
-                titlesData: FlTitlesData(
-                  leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 42)),
-                  bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: true)),
+          return ListView.separated(
+            itemCount: items.length,
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (context, i) {
+              final it = items[i];
+              final templateKey = (it['templateKey'] ?? '-').toString();
+              final age = it['age'] ?? '-';
+              final ts = (it['timestamp'] ?? '').toString();
+
+              final m = (it['metrics'] as Map?) ?? {};
+              final z = (it['zscore'] as Map?) ?? {};
+
+              return ListTile(
+                title: Text('$templateKey • อายุ $age'),
+                subtitle: Text(
+                  'H:${_fmtDouble(m['h'])}  C:${_fmtDouble(m['c'])}  '
+                  'Blank:${_fmtDouble(m['blank'])}  COTL:${_fmtDouble(m['cotl'])}\n'
+                  'Z → H:${_fmtDouble(z['h'])}  C:${_fmtDouble(z['c'])}  '
+                  'Blank:${_fmtDouble(z['blank'])}  COTL:${_fmtDouble(z['cotl'])}',
                 ),
-                gridData: FlGridData(show: true),
-                lineBarsData: [
-                  LineChartBarData(
-                    isCurved: true,
-                    spots: spotsH,
-                    dotData: FlDotData(show: false),
-                    barWidth: 3,
-                  ),
-                ],
-                minY: 0,
-                maxY: 1,
-              ),
-            ),
+                trailing: Text(
+                  ts.isEmpty ? '' : ts.replaceFirst('T', '\n').split('.').first,
+                  textAlign: TextAlign.right,
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                onTap: () {
+                  // ภายหลังสามารถพาไปหน้ากราฟ/รายละเอียดได้
+                },
+              );
+            },
           );
         },
       ),
