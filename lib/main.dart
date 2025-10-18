@@ -17,7 +17,7 @@ class ColoringApp extends StatelessWidget {
         useMaterial3: true,
         colorSchemeSeed: Colors.deepPurple,
       ),
-      initialRoute: AppRoutes.templates,
+      initialRoute: AppRoutes.profilePicker, // ✅ ให้เริ่มที่หน้าเลือกโปรไฟล์
       onGenerateRoute: AppRouter.onGenerateRoute,
     );
   }
